@@ -1,5 +1,26 @@
 {
+  "name": "kk-booking-bot",
+  "version": "1.0.0",
+  "description": "Automated booking tool for Solid Core fitness classes",
+  "main": "src/orchestrator.js",
+  "type": "commonjs",
+  "scripts": {
+    "login": "node src/login.js",
+    "arm": "node src/scheduler.js",
+    "book-now": "node src/orchestrator.js",
+    "test-session": "node test-session.js",
+    "ui": "vite"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "playwright": "^1.58.2"
+    "playwright": "^1.58.2",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.1",
+    "vite": "^8.0.0"
   }
 }

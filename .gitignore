@@ -1,2 +1,9 @@
 browser-data/
 node_modules/
+preferences.json
+dist/
+.env
+*.log
+logs/
+.DS_Store
+temp-sessions/
