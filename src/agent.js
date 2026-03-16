@@ -110,13 +110,11 @@ async function bookClass(context, booking, options = {}) {
     // ─── Step 2: Set location filter ────────────────────────────────
     log(`Setting location to "${booking.location}"...`);
     await setLocation(page, booking.location);
-    await waitForModalClose(page, 3000);
     await humanDelay(300, 600);
 
     // ─── Step 3: Set time + class type filters ──────────────────────
     log(`Setting filters: time ${booking.time_start}–${booking.time_end}, class type ${booking.class_type}...`);
     await setFilters(page, booking);
-    await waitForModalClose(page, 3000);
     await humanDelay(300, 600);
 
     // ─── Step 4: Select date ────────────────────────────────────────
@@ -126,7 +124,7 @@ async function bookClass(context, booking, options = {}) {
 
     // ─── Step 5: Find class and click "book" ────────────────────────
     log("Scanning class list...");
-    const bookResult = await findAndClickBook(page, booking);
+    const bookResult = await findAndClickBook(page);
 
     if (bookResult.waitlisted) {
       log("Class is full — joining waitlist instead.");
@@ -149,9 +147,8 @@ async function bookClass(context, booking, options = {}) {
     if (dryRun) {
       log("DRY RUN — taking screenshot then stopping.");
       await humanDelay(1500, 2000); // brief pause so you can see the result
-      let screenshotPath = null;
       try {
-        screenshotPath = `dry-run-${booking.location.replace(/[^a-z0-9]/gi, "_")}-${booking.date}-${booking.time_start.replace(":", "")}.png`;
+        const screenshotPath = `dry-run-${booking.location.replace(/[^a-z0-9]/gi, "_")}-${booking.date}-${booking.time_start.replace(":", "")}.png`;
         await page.screenshot({ path: screenshotPath, fullPage: true });
         log(`Screenshot saved: ${screenshotPath}`);
       } catch (_) {}
@@ -542,17 +539,17 @@ async function tryClickDayInStrip(page, day) {
     if (el && await el.isVisible()) { await el.click(); return true; }
   } catch (_) {}
 
-  // Strategy 2: DOM scan.
+  // Strategy 2: DOM scan scoped to main content.
   // Each date column's textContent is something like "Mon\n23" or "Tue23".
   // We extract the number(s) from each candidate element and check siblings
   // to confirm it's the date strip (siblings also have consecutive day numbers).
   return page.evaluate((day) => {
-    // Extract all integers from a string
     function extractNums(str) {
       return (str.match(/\d+/g) || []).map(Number).filter((n) => n >= 1 && n <= 31);
     }
 
-    const candidates = [...document.querySelectorAll("button, div, li, td, a")];
+    const root = document.querySelector("main") || document;
+    const candidates = [...root.querySelectorAll("button, div, li, td, a")];
     for (const el of candidates) {
       if (!el.offsetParent) continue; // hidden
       const nums = extractNums(el.textContent || "");
@@ -594,16 +591,16 @@ async function advanceDateStrip(page) {
   }
 
   return page.evaluate(() => {
-    function extractDayNums(str) {
+    function extractNums(str) {
       return (str.match(/\d+/g) || []).map(Number).filter((n) => n >= 1 && n <= 31);
     }
 
-    // Find the date strip container: an element whose direct children include
-    // multiple elements each containing consecutive day numbers.
+    // Find the date strip container scoped to main content.
+    const root = document.querySelector("main") || document;
     let stripContainer = null;
-    for (const el of document.querySelectorAll("*")) {
+    for (const el of root.querySelectorAll("*")) {
       if (!el.offsetParent) continue;
-      const childNums = [...el.children].flatMap((c) => extractDayNums(c.textContent || ""));
+      const childNums = [...el.children].flatMap((c) => extractNums(c.textContent || ""));
       const unique = [...new Set(childNums)];
       if (unique.length >= 4) {
         // Check they're consecutive-ish
@@ -639,23 +636,29 @@ async function advanceDateStrip(page) {
 
 // ─── Find Class and Click Book ────────────────────────────────────────────────
 
-async function findAndClickBook(page, booking) {
+/**
+ * Return the first batch of visible elements matching any selector in the list.
+ */
+async function collectVisibleButtons(page, selectors) {
+  for (const sel of selectors) {
+    try {
+      const btns = await page.$$(sel);
+      const visible = [];
+      for (const btn of btns) {
+        if (await btn.isVisible()) visible.push(btn);
+      }
+      if (visible.length > 0) return visible;
+    } catch (_) {}
+  }
+  return [];
+}
+
+async function findAndClickBook(page) {
   // Filters + date are already applied, so the visible class list is pre-narrowed.
-  // Wait for the list to render.
-  await page.waitForTimeout(2000);
-
-  const log = (msg) => console.log(`  [book] ${msg}`);
-
-  // ── Collect all visible Book / Join Waitlist buttons ──────────────────────
-  // solidcore renders each class card with one action button.
-  // We prefer an exact "Book" button; fall back to "Join Waitlist".
-
-  // Note: the nav bar has a "book a class" link — exclude it by requiring exact "book" text
-  // and scoping to the main content area (not the header nav).
+  // Wait for a book or waitlist button to appear (up to 5s) instead of a blind sleep.
   const bookBtnSelectors = [
     'main button:has-text("book")',
     'main a:has-text("book")',
-    // fallback without main scope but with exact text match (not "book a class")
     'button:text-is("book")',
     'button:text-is("Book")',
     'a:text-is("book")',
@@ -667,24 +670,20 @@ async function findAndClickBook(page, booking) {
     'button:has-text("waitlist")',
   ];
 
-  // Collect all book buttons, filter to visible ones
-  let bookButtons = [];
-  for (const sel of bookBtnSelectors) {
-    try {
-      const btns = await page.$$(sel);
-      for (const btn of btns) {
-        if (await btn.isVisible()) bookButtons.push(btn);
-      }
-      if (bookButtons.length > 0) break;
-    } catch (_) {}
-  }
+  await page.waitForSelector(
+    [...bookBtnSelectors, ...waitlistBtnSelectors].join(", "),
+    { timeout: 5000 }
+  ).catch(() => {});
 
+  const log = (msg) => console.log(`  [book] ${msg}`);
+
+  // ── Book buttons ──────────────────────────────────────────────────────────
+  const bookButtons = await collectVisibleButtons(page, bookBtnSelectors);
   if (bookButtons.length > 0) {
     log(`Found ${bookButtons.length} Book button(s) — clicking first.`);
     const urlBefore = page.url();
     await bookButtons[0].click();
 
-    // Wait for either a URL change or a booking/confirmation modal to appear
     await Promise.race([
       page.waitForURL((url) => url !== urlBefore, { timeout: 6000 }),
       page.waitForSelector('[role="dialog"], [class*="confirm"], [class*="checkout"], [class*="purchase"]', { timeout: 6000 }),
@@ -693,22 +692,11 @@ async function findAndClickBook(page, booking) {
     const urlAfter = page.url();
     const navigated = urlAfter !== urlBefore;
     log(`Book clicked — URL ${navigated ? "changed to " + urlAfter : "unchanged (may have opened modal)"}`);
-
     return { success: true, navigated };
   }
 
-  // ── No Book buttons — look for Waitlist ───────────────────────────────────
-  let waitlistButtons = [];
-  for (const sel of waitlistBtnSelectors) {
-    try {
-      const btns = await page.$$(sel);
-      for (const btn of btns) {
-        if (await btn.isVisible()) waitlistButtons.push(btn);
-      }
-      if (waitlistButtons.length > 0) break;
-    } catch (_) {}
-  }
-
+  // ── Waitlist buttons ──────────────────────────────────────────────────────
+  const waitlistButtons = await collectVisibleButtons(page, waitlistBtnSelectors);
   if (waitlistButtons.length > 0) {
     log(`No Book button found — joining waitlist.`);
     await waitlistButtons[0].click();

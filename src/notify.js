@@ -102,10 +102,7 @@ function printResults(results) {
  */
 function writeLogFile(results) {
   try {
-    // Ensure logs directory exists
-    if (!fs.existsSync(LOGS_DIR)) {
-      fs.mkdirSync(LOGS_DIR, { recursive: true });
-    }
+    fs.mkdirSync(LOGS_DIR, { recursive: true });
 
     const now = new Date();
     const timestamp = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
