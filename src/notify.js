@@ -23,6 +23,18 @@ const STATUS_EMOJI = {
   failed: "❌",
 };
 
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Count results by status in a single pass.
+ */
+function summarizeResults(results) {
+  return results.reduce(
+    (acc, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; },
+    { booked: 0, waitlisted: 0, no_class: 0, dry_run: 0, failed: 0 }
+  );
+}
+
 // ── Console output ───────────────────────────────────────────────────────────
 
 /**
@@ -43,11 +55,7 @@ function printResults(results) {
   }
 
   // Summary counts
-  const booked = results.filter((r) => r.status === "booked").length;
-  const waitlisted = results.filter((r) => r.status === "waitlisted").length;
-  const noClass = results.filter((r) => r.status === "no_class").length;
-  const dryRun = results.filter((r) => r.status === "dry_run").length;
-  const failed = results.filter((r) => r.status === "failed").length;
+  const { booked, waitlisted, no_class: noClass, dry_run: dryRun, failed } = summarizeResults(results);
 
   console.log(`  ✅ Booked:      ${booked}`);
   console.log(`  ⏳ Waitlisted:  ${waitlisted}`);
@@ -113,12 +121,7 @@ function writeLogFile(results) {
       timestamp: now.toISOString(),
       timestamp_local: now.toLocaleString(),
       total_bookings: results.length,
-      summary: {
-        booked: results.filter((r) => r.status === "booked").length,
-        waitlisted: results.filter((r) => r.status === "waitlisted").length,
-        no_class: results.filter((r) => r.status === "no_class").length,
-        failed: results.filter((r) => r.status === "failed").length,
-      },
+      summary: summarizeResults(results),
       results: results.map((r, i) => ({
         index: i + 1,
         status: r.status,

@@ -735,21 +735,10 @@ async function selectPassAndConfirm(page) {
     'label:has(input[type="radio"])',
   ];
 
-  for (const selector of passSelectors) {
-    try {
-      const passOptions = await page.$$(selector);
-      if (passOptions.length > 0) {
-        // Click the first available pass
-        const firstPass = passOptions[0];
-        if (await firstPass.isVisible()) {
-          await firstPass.click();
-          await humanDelay();
-          break;
-        }
-      }
-    } catch (_) {
-      continue;
-    }
+  const passOptions = await collectVisibleButtons(page, passSelectors);
+  if (passOptions.length > 0) {
+    await passOptions[0].click();
+    await humanDelay();
   }
 
   // Step 2: Click "Book Class" confirmation button
@@ -765,16 +754,11 @@ async function selectPassAndConfirm(page) {
     'input[type="submit"]',
   ];
 
-  for (const selector of confirmSelectors) {
-    try {
-      const confirmBtn = await page.waitForSelector(selector, { timeout: 3000 });
-      if (confirmBtn && await confirmBtn.isVisible()) {
-        await confirmBtn.click();
-        return { success: true };
-      }
-    } catch (_) {
-      continue;
-    }
+  await page.waitForSelector(confirmSelectors.join(", "), { timeout: 5000 }).catch(() => {});
+  const confirmBtns = await collectVisibleButtons(page, confirmSelectors);
+  if (confirmBtns.length > 0) {
+    await confirmBtns[0].click();
+    return { success: true };
   }
 
   return { success: false, message: "Could not find confirmation/Book Class button" };
