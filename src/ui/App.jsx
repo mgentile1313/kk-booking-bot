@@ -38,21 +38,51 @@ function formatScheduleDate(dateStr) {
   return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}-12:00AM`;
 }
 
-const emptyBooking = () => ({
+/** Returns all Monday/Wednesday/Friday dates in the next calendar month as YYYY-MM-DD strings. */
+function getNextMonthMWFDates() {
+  const now = new Date();
+  const nextMonth = now.getMonth() + 1;
+  const year = nextMonth > 11 ? now.getFullYear() + 1 : now.getFullYear();
+  const month = nextMonth > 11 ? 0 : nextMonth;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const dates = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dow = new Date(year, month, d).getDay(); // 1=Mon, 3=Wed, 5=Fri
+    if (dow === 1 || dow === 3 || dow === 5) {
+      dates.push(new Date(year, month, d).toISOString().slice(0, 10));
+    }
+  }
+  return dates;
+}
+
+function defaultMWFBookings() {
+  return getNextMonthMWFDates().map((date, i) => ({
+    id: crypto.randomUUID?.() || String(Date.now()) + i,
+    location: "NY, East Village",
+    date,
+    time_start: "07:00",
+    time_end: "08:00",
+    class_type: "Signature50",
+    instructor_preference: null,
+    priority: i + 1,
+  }));
+}
+
+const emptyBooking = (priority = 1) => ({
   id: crypto.randomUUID?.() || String(Date.now()) + Math.random(),
-  location: LOCATIONS[0],
-  date: getNextMonth23rd(),
-  time_start: "18:00",
-  time_end: "19:00",
+  location: "NY, East Village",
+  date: getNextMonthMWFDates()[0] || getNextMonth23rd(),
+  time_start: "07:00",
+  time_end: "08:00",
   class_type: "Signature50",
   instructor_preference: null,
-  priority: 1,
+  priority,
 });
 
 const TARGET_DATE = getNextMonth23rd();
 
 export default function App() {
-  const [bookings, setBookings] = useState([emptyBooking()]);
+  const [bookings, setBookings] = useState(defaultMWFBookings());
   const [saveStatus, setSaveStatus] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -73,7 +103,7 @@ export default function App() {
         }
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => { setBookings(defaultMWFBookings()); setLoading(false); });
   }, []);
 
   const updateBooking = (id, field, value) => {
@@ -84,8 +114,7 @@ export default function App() {
   };
 
   const addBooking = () => {
-    const newBooking = emptyBooking();
-    newBooking.priority = bookings.length + 1;
+    const newBooking = emptyBooking(bookings.length + 1);
     setBookings((prev) => [...prev, newBooking]);
     setSaveStatus(null);
   };
